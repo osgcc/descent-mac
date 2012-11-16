@@ -1,0 +1,129 @@
+
+	MACHINE	MC68030		; use 030 instructions
+	CASE	ON		; called by C functions
+
+
+
+	PRINT	PUSH,OFF
+	include	'macros.inc'
+	PRINT	POP
+
+
+	PROC
+	CODE
+rcsid:	dc.b	'$Id: blit68k.a 1.1 1995/09/14 15:37:43 allender Exp $'
+	ENDP
+
+;------------------------------------------------------
+; copy a row of pixels
+; C prototype: void gr_linear_movsd(ubyte * src:__A0, ubyte * dest:__A1, uint num_pixels:__D0 )	
+;------------------------------------------------------
+
+gr_linear_movsd	PROC	EXPORT
+
+	pushm.l	d0/a0/a1
+	and.w	#~3, d0
+	beq.s	@end
+@loop:
+	move.l	(a0)+, (a1)+
+	subq.w	#4, d0
+	beq.s	@end		
+	move.l	(a0)+, (a1)+
+	subq.w	#4, d0
+	bne.s	@loop		
+@end:
+	popm.l	d0/a0/a1
+	rts
+	ENDP
+
+
+;------------------------------------------------------
+; copy a row of pixels while doubling it
+;
+; C prototype:
+; extern void BlitLargeAlign(ubyte *draw_buffer, int dstRowBytes, ubyte *dstPtr, int w, int h, int modulus);
+;------------------------------------------------------
+
+	MACRO
+	Copy4PixelsDoubled.&siz
+	move.l	(a0)+, d1	; grab 4 pixels (P3 and P4 in low word)
+
+	move.w	d1, d2		; d1 = xx34
+	swap	d2		; d1 = 34xx
+	move.w	d1, d2		; d1 = 3434
+	rol.w	#8, d2		; d1 = 3443
+	ror.l	#8, d2		; d1 = 3344
+	move.l	d2, 4(a1)
+	move.l	d2, 4(a2)
+
+	swap	d1		; get P1 and P2 into low word
+
+	move.w	d1, d2		; d1 = xx12
+	swap	d2		; d1 = 12xx
+	move.w	d1, d2		; d1 = 1212
+	rol.w	#8, d2		; d1 = 2112
+	ror.l	#8, d2		; d1 = 1122
+	move.l	d2, (a1)
+	move.l	d2, (a2)
+
+	addq.l	#8, a1
+	addq.l	#8, a2
+	ENDM
+
+BLAstack	RECORD	{A6Link}; C-style stack frame
+LocalSize	EQU	0	; no local vars
+A6Link		ds.l	1	; old value of A6 set by LINK
+Return		ds.l	1	; return address for RTS
+src_buffer	ds.l	1	; source pixel buffer pointer
+dest_row_bytes	ds.l	1	; number of bytes to pixel below this one
+dest_buffer	ds.l	1	; dest pixel buffer pointer
+src_width	ds.l	1	; source bitmap width
+src_height	ds.l	1	; source bitmap height
+src_row_bytes	ds.l	1	; number of bytes to pixel below this one 
+		ENDR
+
+BlitLargeAlign	PROC	EXPORT
+	WITH	BLAstack
+	link	a6,#LocalSize
+
+	pushm.l	d0-d7/a0-a4
+	move.l	dest_row_bytes(a6), d4
+	move.l	src_row_bytes(a6), d5
+	move.l	src_buffer(a6), a3
+	move.l	dest_buffer(a6), a4
+	move.l	src_width(a6), d6
+	and.w	#~3, d6
+	beq.s	_end
+	move.l	src_height(a6), d7
+
+_row_loop:
+	move.l	a3, a0			; src_buffer
+	move.l	a4, a1			; dest_buffer
+	move.l	a4, a2
+	add.l	d4, a2			; dest_buffer + dest_row_bytes
+	move.l	d6, d0			; src_width
+
+_pixel_loop:
+	Copy4PixelsDoubled
+	subq.w	#4, d0			; count pixels written
+	bne.s	_pixel_loop		; note! branch taken is faster
+					; than branch not taken. Thus,
+					; it is faster to leave loop
+					; rolled up.
+
+	add.l	d4, a4
+	add.l	d4, a4			; dest_row_bytes*2
+	add.l	d5, a3			; + src_row_bytes
+	subq.l	#1, d7			; --src_height
+	bne.s	_row_loop		
+
+_end:
+	popm.l	d0-d7/a0-a4
+
+	unlk	a6
+	rts
+	ENDP
+
+
+
+	END

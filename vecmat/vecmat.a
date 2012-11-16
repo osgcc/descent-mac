@@ -1,0 +1,183 @@
+;;
+;; asm file for certain vector/matrix functions for the PPC
+;;
+
+#  Macro added by allender 6/21/95 -- found in MPW PPC assembler examples.  This macro
+#  used at beginning of routine should export all appropriate symbols and set us up
+#  properly for debug information
+
+	MACRO
+	MakeFunction &fnName
+		EXPORT &fnName[DS]
+ 		EXPORT .&fnName[PR]
+		
+		TC &fnName[TC], &fnName[DS]
+			
+		CSECT &fnName[DS]
+			DC.L .&fnName[PR]
+ 			DC.L TOC[tc0]
+		
+		FUNCTION .&fnName[PR]	
+		CSECT .&fnName[PR]
+		
+	ENDM
+
+;; vm_vec_dotprod
+;;
+;; on entry:
+;;		r3 -- v0
+;;		r4 -- v1
+;;
+;; r9 and r10 store intermediate running sum
+;;
+;; return dotproduct in r3
+
+	MakeFunction vm_vec_dotprod
+	align	4
+
+	lwz		r5, 0(r3)
+	lwz		r6, 0(r4)
+	mullw	r9,r5,r6			# multiply low word
+	mulhw	r10,r5,r6			# multiply high word (signed)
+
+	lwz		r5, 4(r3)
+	lwz		r6, 4(r4)
+	mullw	r7,r5,r6			# multiply low word
+	mulhw	r8,r5,r6			# multiply high word (signed)
+	lwz		r5, 8(r3)
+	lwz		r6, 8(r4)
+	addc	r9, r9, r7			# add low words together setting carry bit
+	adde	r10, r10, r8		# add high words with the carry bit
+
+;;	lwz		r5, 8(r3)
+;;	lwz		r6, 8(r4)
+	mullw	r7,r5,r6			# multiply low word
+	mulhw	r8,r5,r6			# multiply high word (signed)
+	addc	r9, r9, r7			# add low words together setting carry bit
+	adde	r10, r10, r8		# add high words with the carry bit
+	
+	rlwinm	r3,r9,16,16,31		# mask off low portion of result
+	rlwimi	r3,r10,16,0,15		# insert high portion of result
+
+	blr							# return to caller
+
+;; fix vm_vec_dot3(fix x,fix y,fix z,vms_vector *v)
+;;
+;; on entry:
+;;		r3 -- x
+;;		r4 -- y
+;;		r5 -- z
+;;		r6 -- v
+;;
+;; r10 and r11 store intermediate running sum
+;;
+;; returns dotprod in r3
+
+	MakeFunction vm_vec_dot3
+	align 	4
+	
+	lwz		r7, 0(r6)
+	mullw	r10, r7, r3
+	mulhw	r11, r7, r3
+	
+	lwz		r7, 4(r6)
+	mullw	r8, r7, r4
+	mulhw	r9, r7, r4
+	lwz		r7, 8(r6)
+	addc	r10, r10, r8		# add low words together setting carry bit
+	adde	r11, r11, r9		# add high words with the carry bit
+	
+;;	lwz		r7, 8(r6)
+	mullw	r8, r7, r5
+	mulhw	r9, r7, r5
+	addc	r10, r10, r8		# add low words together setting carry bit
+	adde	r11, r11, r9		# add high words with the carry bit
+
+	rlwinm	r3,r10,16,16,31		# mask off low portion of result
+	rlwimi	r3,r11,16,0,15		# insert high portion of result
+
+	blr							# return to caller
+
+;; vms_vector *vm_vec_crossprod(vms_vector *dest,vms_vector *src0,vms_vector *src1)
+;;
+;; on entry:
+;;
+;;		r3 -- destination vector
+;;		r4 -- src0
+;;		r5 -- src1
+;;
+;; r3 contains result of crossprod as return value
+
+	MakeFunction vm_vec_crossprod
+	align 	4
+	
+;;	q.low = q.high = 0;
+;;	fixmulaccum(&q,src0->y,src1->z);
+;;	fixmulaccum(&q,-src0->z,src1->y);
+;;	dest->x = fixquadadjust(&q);
+
+	lwz		r6, 4(r4)			# src0->y
+	lwz		r7, 8(r5)			# src1->z
+	mullw	r9,r6,r7			# multiply low word
+	mulhw	r10,r6,r7			# multiply high word (signed)
+	
+	lwz		r8, 8(r4)			# src0->z
+	lwz		r7, 4(r5)			# src1->y
+	neg		r6, r8				# -src0->y
+	mullw	r11,r6,r7			# multiply low word
+	mulhw	r12,r6,r7			# multiply high word (signed)
+	addc	r11, r11, r9		# add low words together setting carry bit
+	adde	r12, r12, r10		# add high words with the carry bit
+
+	rlwinm	r8,r11,16,16,31		# mask off low portion of result
+	rlwimi	r8,r12,16,0,15		# insert high portion of result
+	stw		r8, 0(r3)
+	
+;;	q.low = q.high = 0;
+;;	fixmulaccum(&q,src0->z,src1->x);
+;;	fixmulaccum(&q,-src0->x,src1->z);
+;;	dest->y = fixquadadjust(&q);
+
+	lwz		r6, 8(r4)			# src0->z
+	lwz		r7, 0(r5)			# src1->x
+	mullw	r9,r6,r7			# multiply low word
+	mulhw	r10,r6,r7			# multiply high word (signed)
+	
+	lwz		r8, 0(r4)			# src0->x
+	lwz		r7, 8(r5)			# src1->z
+	neg		r6, r8				# -src0->x
+	mullw	r11,r6,r7			# multiply low word
+	mulhw	r12,r6,r7			# multiply high word (signed)
+	addc	r11, r11, r9		# add low words together setting carry bit
+	adde	r12, r12, r10		# add high words with the carry bit
+
+	rlwinm	r8,r11,16,16,31		# mask off low portion of result
+	rlwimi	r8,r12,16,0,15		# insert high portion of result
+	stw		r8, 4(r3)
+
+;;	q.low = q.high = 0;
+;;	fixmulaccum(&q,src0->x,src1->y);
+;;	fixmulaccum(&q,-src0->y,src1->x);
+;;	dest->z = fixquadadjust(&q);
+
+	lwz		r6, 0(r4)			# src0->x
+	lwz		r7, 4(r5)			# src1->y
+	mullw	r9,r6,r7			# multiply low word
+	mulhw	r10,r6,r7			# multiply high word (signed)
+	
+	lwz		r8, 4(r4)			# src0->y
+	lwz		r7, 0(r5)			# src1->x
+	neg		r6, r8				# -src0->y
+	mullw	r11,r6,r7			# multiply low word
+	mulhw	r12,r6,r7			# multiply high word (signed)
+	addc	r11, r11, r9		# add low words together setting carry bit
+	adde	r12, r12, r10		# add high words with the carry bit
+
+	rlwinm	r8,r11,16,16,31		# mask off low portion of result
+	rlwimi	r8,r12,16,0,15		# insert high portion of result
+	stw		r8, 8(r3)
+
+	blr
+	
+
+

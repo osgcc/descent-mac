@@ -1,0 +1,42 @@
+	import	gr_fade_table
+	import	write_buffer
+	import	window_left
+	import	window_right
+	import	window_top
+	import	window_bottom
+	import	window_width
+	import	bytes_per_row
+	import	window_height
+	import	y_pointers
+
+#_lighting_tables	equ	_gr_fade_table
+#write_buffer	equ	_write_buffer
+
+#max_window_width	equ	320
+#num_iters	=	max_window_width
+#
+#  if num_iters and 1
+#num_iters = num_iters + 1
+#  endif
+
+	import per2_flag
+	import tmap_flat_cthru_table
+	import tmap_flat_color
+	import tmap_flat_shade_value
+	import dither_intensity_lighting
+	import Lighting_on
+	import pixel_data_selector
+	import gr_fade_table_selector
+	import Transparency_on
+	import fx_u
+	import fx_v
+	import fx_z
+	import fx_l
+	import fx_du_dx
+	import fx_dv_dx
+	import fx_dz_dx
+	import fx_dl_dx
+	import fx_y
+	import fx_xleft
+	import fx_xright
+	import pixptr

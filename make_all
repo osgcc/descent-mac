@@ -1,0 +1,22 @@
+
+Set Exit 0
+Export Exit
+Set TraceFailures 1
+Export TraceFailures
+
+rm :lib:Å.lib
+#duplicate :halestorm:PPCsnd.lib :lib
+#duplicate :halestorm:68Ksnd.lib :lib
+
+Set subdirs '2d 3d appltalk bios cfile iff ipx fix mem misc macsys texmap vecmat main'
+
+for dir in {subdirs}
+	echo "Making in {dir}"
+	cd {dir}
+	make clean > make.out
+	make.out
+	make > make.out
+	make.out
+	rm make.out
+	cd ::
+end

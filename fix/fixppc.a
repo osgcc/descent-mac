@@ -1,0 +1,574 @@
+	IF	0
+;# frsqrte instruction emulation
+
+	MACRO
+	RoutineEntry	&p1
+
+		export	&p1[DS]
+		export	.&p1
+
+		toc
+
+		csect	&p1[DS]
+		dc.l	.&p1, TOC[tc0]
+
+		toc
+		tc		&p1[TC], &p1[DS]
+
+		csect [PR]
+.&p1:
+	
+	ENDM
+
+;#
+;# frsqrte returns an estimate of the reciprocal of the square-root of the
+;# double-precision operand, correct to a precision of one part in 32
+;# (5-6 bits of accuracy).  This code treats denormalized numbers as zero.
+;# This code uses a table-lookup on the most-significant bits of the operand.
+
+	toc
+
+.estimateTable:
+	tc	estimateTable[tc], estimateTable
+.sqrt2r:
+	tc	sqrt2r[tc], sqrt2r
+.NaN:
+	tc	NaN[tc], NaN
+.Zero:
+	tc	Zero[tc], Zero
+
+
+	RoutineEntry	frsqrte
+
+	;# copy operand from fpr to gpr for bit-wise operation
+	stfd	f1, -8(r1)
+	lwz	r3, -8(r1)
+	lwz	r4, -4(r1)
+
+	;# check for exceptional operands
+	cmpwi	cr1, r3, 0		;# sign bit to CR1[0]
+	rlwinm	r5, r3, 12, 21, 31	;# extract exponent
+	cmpwi	cr2, r5, 2047		;# max exponent?
+	rlwinm	r6, r3, 0, 12, 31	;# extract upper significand
+	or.	r6, r6, r4		;# combine with lower
+	crandc	12, 10, 2		;# SNaN or QNaN?
+	bt	12, resultNaN
+	crand	12, 10, 0		;# -Inf?
+	bt	12, resultNaN
+	crandc	12, 10, 0		;# +Inf?
+	bt	12, resultZero
+	cmpwi	cr2, r5, 0		;# min exponent
+	beq	cr2, resultInf		;# return Inf of same sign
+	blt	cr1, resultNaN
+
+	;# operand is a normal number.  Extract most-significant 8
+	;# bits of significand for index into estimate table
+	lwz	r6, .estimateTable(r2)
+	rlwinm.	r7, r3, 20, 24, 31	;# extract most-significant 8 bits
+	lbzx	r8, r6, r7		;# look up estimate bits
+
+	;# divide non-biased exponent by 2
+	addi	r5, r5, -1023		;# subtract bias
+	srawi	r6, r5, 1
+	subfic	r6, r6, 1022		;# add bias back in, negating exp
+	bne	$+8
+	addi	r6, r6, 1		;# adjust special case of 0 sig.
+	andi.	r0, r5, 1		;# lsb set? (must multiply by sqrt(2))
+	rlwinm	r6, r6, 20, 1, 11	;# move to exponent field
+	rlwimi	r6, r8, 12, 12, 19	;# insert estimate bits
+	stw	r6, -8(r1)		;# transfer back to FP registers
+	li	r0, 0
+	stw	r0, -4(r1)
+	lfd	f1, -8(r1)
+	beqlr
+
+	;# multiply by 1/sqrt(2) to adjust significand
+	lwz	r6, .sqrt2r(r2)
+	lfd	f2, 0(r6)
+	fmul	f1, f1, f2
+	blr
+
+resultNaN:
+	lwz	r6, .NaN(r2)
+	lfd	f1, 0(r6)
+	blr
+
+resultZero:
+	lwz	r6, .Zero(r2)
+	lfd	f1, 0(r6)
+	blr
+
+resultInf:
+	li	r4, 2047		;# max exponent
+	rlwimi	r3, r4, 22, 1, 31	;# insert into sign bit
+	stw	r3, -8(r1)
+	li	r0, 0
+	stw	r0, -4(r1)
+	lfd	f1, -8(r1)
+	blr
+
+
+	csect	[rw]
+	align	4
+
+NaN:
+	dc.l	0x7ffc0000
+	dc.l	0x00000000
+
+Zero:
+	dc.l	0x00000000
+	dc.l	0x00000000
+	
+sqrt2r:
+	dc.l	0x3fe6a09e
+	dc.l	0x667f3bcc
+
+estimateTable:
+	dc.b 0x00
+	dc.b 0xff
+	dc.b 0xfe
+	dc.b 0xfd
+	dc.b 0xfc
+	dc.b 0xfb
+	dc.b 0xfa
+	dc.b 0xf9
+	dc.b 0xf8
+	dc.b 0xf7
+	dc.b 0xf6
+	dc.b 0xf5
+	dc.b 0xf4
+	dc.b 0xf3
+	dc.b 0xf2
+	dc.b 0xf1
+	dc.b 0xf0
+	dc.b 0xef
+	dc.b 0xee
+	dc.b 0xed
+	dc.b 0xed
+	dc.b 0xec
+	dc.b 0xeb
+	dc.b 0xea
+	dc.b 0xe9
+	dc.b 0xe8
+	dc.b 0xe7
+	dc.b 0xe6
+	dc.b 0xe6
+	dc.b 0xe5
+	dc.b 0xe4
+	dc.b 0xe3
+	dc.b 0xe2
+	dc.b 0xe1
+	dc.b 0xe1
+	dc.b 0xe0
+	dc.b 0xdf
+	dc.b 0xde
+	dc.b 0xdd
+	dc.b 0xdc
+	dc.b 0xdc
+	dc.b 0xdb
+	dc.b 0xda
+	dc.b 0xd9
+	dc.b 0xd8
+	dc.b 0xd8
+	dc.b 0xd7
+	dc.b 0xd6
+	dc.b 0xd5
+	dc.b 0xd5
+	dc.b 0xd4
+	dc.b 0xd3
+	dc.b 0xd2
+	dc.b 0xd2
+	dc.b 0xd1
+	dc.b 0xd0
+	dc.b 0xcf
+	dc.b 0xcf
+	dc.b 0xce
+	dc.b 0xcd
+	dc.b 0xcc
+	dc.b 0xcc
+	dc.b 0xcb
+	dc.b 0xca
+	dc.b 0xc9
+	dc.b 0xc9
+	dc.b 0xc8
+	dc.b 0xc7
+	dc.b 0xc7
+	dc.b 0xc6
+	dc.b 0xc5
+	dc.b 0xc5
+	dc.b 0xc4
+	dc.b 0xc3
+	dc.b 0xc2
+	dc.b 0xc2
+	dc.b 0xc1
+	dc.b 0xc0
+	dc.b 0xc0
+	dc.b 0xbf
+	dc.b 0xbe
+	dc.b 0xbe
+	dc.b 0xbd
+	dc.b 0xbc
+	dc.b 0xbc
+	dc.b 0xbb
+	dc.b 0xba
+	dc.b 0xba
+	dc.b 0xb9
+	dc.b 0xb9
+	dc.b 0xb8
+	dc.b 0xb7
+	dc.b 0xb7
+	dc.b 0xb6
+	dc.b 0xb5
+	dc.b 0xb5
+	dc.b 0xb4
+	dc.b 0xb4
+	dc.b 0xb3
+	dc.b 0xb2
+	dc.b 0xb2
+	dc.b 0xb1
+	dc.b 0xb0
+	dc.b 0xb0
+	dc.b 0xaf
+	dc.b 0xaf
+	dc.b 0xae
+	dc.b 0xad
+	dc.b 0xad
+	dc.b 0xac
+	dc.b 0xac
+	dc.b 0xab
+	dc.b 0xab
+	dc.b 0xaa
+	dc.b 0xa9
+	dc.b 0xa9
+	dc.b 0xa8
+	dc.b 0xa8
+	dc.b 0xa7
+	dc.b 0xa7
+	dc.b 0xa6
+	dc.b 0xa5
+	dc.b 0xa5
+	dc.b 0xa4
+	dc.b 0xa4
+	dc.b 0xa3
+	dc.b 0xa3
+	dc.b 0xa2
+	dc.b 0xa2
+	dc.b 0xa1
+	dc.b 0xa0
+	dc.b 0xa0
+	dc.b 0x9f
+	dc.b 0x9f
+	dc.b 0x9e
+	dc.b 0x9e
+	dc.b 0x9d
+	dc.b 0x9d
+	dc.b 0x9c
+	dc.b 0x9c
+	dc.b 0x9b
+	dc.b 0x9b
+	dc.b 0x9a
+	dc.b 0x9a
+	dc.b 0x99
+	dc.b 0x99
+	dc.b 0x98
+	dc.b 0x98
+	dc.b 0x97
+	dc.b 0x97
+	dc.b 0x96
+	dc.b 0x96
+	dc.b 0x95
+	dc.b 0x95
+	dc.b 0x94
+	dc.b 0x94
+	dc.b 0x93
+	dc.b 0x93
+	dc.b 0x92
+	dc.b 0x92
+	dc.b 0x91
+	dc.b 0x91
+	dc.b 0x90
+	dc.b 0x90
+	dc.b 0x8f
+	dc.b 0x8f
+	dc.b 0x8e
+	dc.b 0x8e
+	dc.b 0x8d
+	dc.b 0x8d
+	dc.b 0x8c
+	dc.b 0x8c
+	dc.b 0x8b
+	dc.b 0x8b
+	dc.b 0x8b
+	dc.b 0x8a
+	dc.b 0x8a
+	dc.b 0x89
+	dc.b 0x89
+	dc.b 0x88
+	dc.b 0x88
+	dc.b 0x87
+	dc.b 0x87
+	dc.b 0x86
+	dc.b 0x86
+	dc.b 0x86
+	dc.b 0x85
+	dc.b 0x85
+	dc.b 0x84
+	dc.b 0x84
+	dc.b 0x83
+	dc.b 0x83
+	dc.b 0x83
+	dc.b 0x82
+	dc.b 0x82
+	dc.b 0x81
+	dc.b 0x81
+	dc.b 0x80
+	dc.b 0x80
+	dc.b 0x80
+	dc.b 0x7f
+	dc.b 0x7f
+	dc.b 0x7e
+	dc.b 0x7e
+	dc.b 0x7d
+	dc.b 0x7d
+	dc.b 0x7d
+	dc.b 0x7c
+	dc.b 0x7c
+	dc.b 0x7b
+	dc.b 0x7b
+	dc.b 0x7b
+	dc.b 0x7a
+	dc.b 0x7a
+	dc.b 0x79
+	dc.b 0x79
+	dc.b 0x79
+	dc.b 0x78
+	dc.b 0x78
+	dc.b 0x77
+	dc.b 0x77
+	dc.b 0x77
+	dc.b 0x76
+	dc.b 0x76
+	dc.b 0x75
+	dc.b 0x75
+	dc.b 0x75
+	dc.b 0x74
+	dc.b 0x74
+	dc.b 0x73
+	dc.b 0x73
+	dc.b 0x73
+	dc.b 0x72
+	dc.b 0x72
+	dc.b 0x72
+	dc.b 0x71
+	dc.b 0x71
+	dc.b 0x70
+	dc.b 0x70
+	dc.b 0x70
+	dc.b 0x6f
+	dc.b 0x6f
+	dc.b 0x6f
+	dc.b 0x6e
+	dc.b 0x6e
+	dc.b 0x6d
+	dc.b 0x6d
+	dc.b 0x6d
+	dc.b 0x6c
+	dc.b 0x6c
+	dc.b 0x6c
+	dc.b 0x6b
+	dc.b 0x6b
+	dc.b 0x6b
+	dc.b 0x6a
+	dc.b 0x6a
+	
+	ENDIF
+
+	IF 0
+	
+	EXPORT .fixmul			# export the code symbol
+.fixmul:
+	mullw	r5,r3,r4			# multiply low word
+	mulhw	r6,r3,r4			# multiply high word (signed)
+	rlwinm	r3,r5,16,16,31		# mask off low portion of result
+	rlwimi	r3,r6,16,0,15		# insert high portion of result
+	blr							# return to caller
+
+
+#  for fixdiv, r3 will contain the dividend, r4 the divisor.
+
+	EXPORT	.fixdiv
+	
+.fixdiv:
+	srawi	r5, r3, 16				# rotate numerator right 16 bits -- keeping sign
+	rlwinm	r6, r3, 16, 0, 15		# shift left 16 bits.
+	mtspr	mq, r6
+	DIALECT Power
+	div		r3, r5, r4
+	DIALECT PowerPC
+	blr
+
+
+#  fixmuldiv
+#		(r3 * r4) / r5
+
+	EXPORT	.fixmuldiv
+	
+.fixmuldiv
+	DIALECT Power
+	mul		r6, r3, r4
+	div		r3, r6, r5
+	DIALECT PowerPC
+	blr
+	
+	ENDIF
+	
+#  for fixmul r3 and r4 contain fixed point numbers to multiply
+#  r3 will hold the return value
+
+	EXPORT .fixmul			# export the code symbol
+
+.fixmul:
+	mullw	r5,r3,r4			# multiply low word
+	mulhw	r6,r3,r4			# multiply high word (signed)
+	rlwinm	r3,r5,16,16,31		# mask off low portion of result
+	rlwimi	r3,r6,16,0,15		# insert high portion of result
+	blr							# return to caller
+
+
+#
+#	Fixed AsmFixedDiv(Fixed a, Fixed b);
+#
+#	On entry, this routine takes the following parameters:
+#		r3 - 	operand a (fixed point, frac, or long format)
+#		r4 -	operand b (fixed point, frac, or long format)
+#	On exit:
+#		r3 -	fixed point, frac, or long quotient
+#
+#	Within the routine, r0 and r5-r9 are used as scratch registers.
+#	Condition register fields cr0 and cr1 are also used.
+#
+#	If b is zero, the function returns:
+#		0x80000000 if a is negative
+#		0x7FFFFFFF if a is zero or positive
+#	If division overflows, the function returns:
+#		0x80000000 if the result is negative
+#		0x7FFFFFFF if the result is positive
+#
+	IF 0
+	
+	EXPORT .fixdiv			# export the code symbol
+
+# Internal register usage
+rNumH:		EQU		r5
+rNumL:		EQU		r6
+rDen:		EQU		r4
+rTemp1:		EQU		r7
+rTemp2:		EQU		r8
+rTemp3:		EQU		r9
+
+bNumNeg:	EQU		4+0
+bDenNeg:	EQU		0
+bQuotNeg:	EQU		4+3
+
+.fixdiv:
+	li		r0,0				# create a handy copy of zero
+	cmpwi	0,rDen,0			# check for divide by zero
+	srawi	rNumH,r3,16			# mask off high word of fixed number and sign-extend
+	rlwinm	rNumL,r3,16,0,15	# mask off low word of fixed number
+	beq		0,FixDivByZero		# branch if divide by zero
+
+	# At this point we have a 64-bit number in r5:r6 and a 32-bit
+	# number in r4.
+
+CommonFixDiv:
+	cmpwi	1,rNumH,0			# check sign of numerator
+	crxor	bQuotNeg,bDenNeg,bNumNeg
+								# calculate sign of result, put it into bit 4
+	bf		bDenNeg,FixDivCheckNumer 	
+								# check sign of denominator
+	neg		rDen,rDen			# make denominator positive if it was negative
+
+FixDivCheckNumer:
+	bf		bNumNeg,FixDiv64Common	
+								# continue if numerator is positive
+	subfc	rNumL,rNumL,r0		# negate denominator, carrying as appropriate
+	subfe	rNumH,rNumH,r0
+
+FixDiv64Common:
+	cmplw	0,rNumH,rDen		# check for overflow
+
+	cntlzw	rTemp1,rDen			# shift numer and denom left
+	xor		rNumH,rNumH,rNumL	#  until denom’s most sig. bit is one
+	slw		rDen,rDen,rTemp1
+	rlwnm	rNumH,rNumH,rTemp1,0,31
+	slw		rNumL,rNumL,rTemp1
+	xor		rNumH,rNumH,rNumL
+	
+	bge-	FixDivOverflow		# branch if overflow
+
+	srwi	rTemp2,rDen,16		
+	divwu	rTemp3,rNumH,rTemp2	# perform 32-bit by 16-bit division
+	mullw	rTemp2,rTemp3,rTemp2
+	subf	rNumH,rTemp2,rNumH	# calculate remainder
+	slwi	rNumH,rNumH,16
+	rlwimi	rNumH,rNumL,16,16,31
+	slwi	rNumL,rNumL,16
+	rlwinm	rTemp2,rDen,0,16,31
+	mullw	rTemp2,rTemp3,rTemp2
+	subfc	rNumH,rTemp2,rNumH
+	subfe.	rTemp2,rTemp2,rTemp2
+	add		rNumL,rNumL,rTemp3
+	bge		FixDiv64ComputeLow
+FixDiv64CorrectHigh:
+	addc	rNumH,rNumH,rDen
+	addze.	rTemp2,rTemp2
+	subi	rNumL,rNumL,1
+	blt		FixDiv64CorrectHigh
+
+FixDiv64ComputeLow:
+	srwi	rTemp2,rDen,16
+	divwu	rTemp3,rNumH,rTemp2
+	mullw	rTemp2,rTemp3,rTemp2
+	subf	rNumH,rTemp2,rNumH
+	slwi	rNumH,rNumH,16
+	rlwimi	rNumH,rNumL,16,16,31
+	slwi	rNumL,rNumL,16
+	rlwinm	rTemp2,rDen,0,16,31
+	mullw	rTemp2,rTemp3,rTemp2
+	subfc	rNumH,rTemp2,rNumH
+	subfe.	rTemp2,rTemp2,rTemp2
+	add		rNumL,rNumL,rTemp3
+	bge		FixDiv64Done
+FixDiv64CorrectLow:
+	addc	rNumH,rNumH,rDen
+	addze.	rTemp2,rTemp2
+	subi	rNumL,rNumL,1
+	blt		FixDiv64CorrectLow
+
+FixDiv64Done:
+	addco.	r3,rNumL,r0
+	bt		bQuotNeg,FixDiv64QuotientNeg	
+							# see if we need to negate answer
+	blt-	FixDivOverflow	# check for overflow case
+	blr						# return to caller
+
+FixDiv64QuotientNeg:
+	neg.	r3,r3			# negate answer
+	bgt-	FixDivOverflow	# check for overflow
+	blr						# return to caller
+
+
+FixDivOverflow:
+	lis		r3,-0x8000		# load max negative number
+	btlr	bQuotNeg		# return if result is negative
+	subi	r3,r3,1			# calc max positive number
+	blr						# return to caller
+
+FixDivByZero:
+	cmpwi	0,r3,0			# is r3 negative?
+	lis		r3,-0x8000		# load max negative number
+	btlr	bNumNeg			# return if numerator was negative
+	subi	r3,r3,1			# calc max positive number
+	blr						# return to caller
+	ENDIF
+	

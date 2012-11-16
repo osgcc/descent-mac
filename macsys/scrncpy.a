@@ -1,0 +1,27 @@
+;  PPC assembly code for fast memcpy using fp register
+;  call -- fp_memcpy(ubyte *dest, ubyte *src, int len);
+;
+;  In:
+;		r3 -- dest addr;
+;		r4 -- src addr;
+;		r5 -- num bytes to copy
+;
+;  Use:
+;		f0 -- holds 8 bytes of data to move from src to dest
+;		r6 -- counter for number of bytes moved
+;
+;  Return:;'		nothing.
+
+	EXPORT	.fp_memcpy
+
+.fp_memcpy:
+	li		r6, 0
+do_store:
+	lfd		f0, 0(r4)
+	stfd	f0, 0(r3)
+	addi	r6,r6,8
+	addi	r4,r4,8
+	addi	r3,r3,8
+	cmp		cr0,0,r5,r6
+	bne		do_store
+	blr
